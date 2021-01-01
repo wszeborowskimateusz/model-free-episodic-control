@@ -9,9 +9,11 @@ import gym
 from mfec.agent import MFECAgent
 from mfec.utils import Utils
 
-ENVIRONMENT = "Qbert-v0"  # More games at: https://gym.openai.com/envs/#atari
-AGENT_PATH = None#"agents/Qbert-v0_1542210528/agent.pkl"
+# ENVIRONMENT = "Qbert-v0"  # More games at: https://gym.openai.com/envs/#atari
+ENVIRONMENT = "MsPacman-v0"  # More games at: https://gym.openai.com/envs/#atari
+AGENT_PATH = "agents/MsPacman-v0_1609170206/agent.pkl"
 RENDER = True
+# RENDER = False
 RENDER_SPEED = 0.04
 
 EPOCHS = 11
