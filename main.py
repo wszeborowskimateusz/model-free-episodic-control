@@ -7,13 +7,16 @@ import time
 import gym
 
 from mfec.agent import MFECAgent
-from mfec.utils import Utils
+from utils import Utils
+from dqn.agent import DQNAgent, preprocess
 
-# ENVIRONMENT = "Qbert-v0"  # More games at: https://gym.openai.com/envs/#atari
 ENVIRONMENT = "MsPacman-v0"  # More games at: https://gym.openai.com/envs/#atari
-AGENT_PATH = "agents/MsPacman-v0_1609170206/agent.pkl"
+AGENT_PATH = None#"agents/MFEC/MsPacman-v0_1609170206/agent.pkl"
+
+# MFEC or DQN
+ALGORITHM = 'DQN'
+
 RENDER = True
-# RENDER = False
 RENDER_SPEED = 0.04
 
 EPOCHS = 11
@@ -32,13 +35,16 @@ SCALE_HEIGHT = 84
 SCALE_WIDTH = 84
 STATE_DIMENSION = 64
 
+# Maximum number of "do nothing" actions to be performed by the agent at the start of an episode
+NO_OP_STEPS = {"DQN": 30, "MFEC": 0}
 
 def main():
     random.seed(SEED)
 
     # Create agent-directory
     execution_time = str(round(time.time()))
-    agent_dir = os.path.join("agents", ENVIRONMENT + "_" + execution_time)
+
+    agent_dir = os.path.join("agents", ALGORITHM, ENVIRONMENT + "_" + execution_time)
     os.makedirs(agent_dir)
 
     # Initialize utils, environment and agent
@@ -48,20 +54,26 @@ def main():
     try:
         env.env.frameskip = FRAMESKIP
         env.env.ale.setFloat("repeat_action_probability", REPEAT_ACTION_PROB)
-        if AGENT_PATH:
-            agent = MFECAgent.load(AGENT_PATH)
+        if ALGORITHM == 'MFEC':
+            if AGENT_PATH:
+                agent = MFECAgent.load(AGENT_PATH)
+            else:
+                agent = MFECAgent(
+                    ACTION_BUFFER_SIZE,
+                    K,
+                    DISCOUNT,
+                    EPSILON,
+                    SCALE_HEIGHT,
+                    SCALE_WIDTH,
+                    STATE_DIMENSION,
+                    range(env.action_space.n),
+                    SEED,
+                )
         else:
-            agent = MFECAgent(
-                ACTION_BUFFER_SIZE,
-                K,
-                DISCOUNT,
-                EPSILON,
-                SCALE_HEIGHT,
-                SCALE_WIDTH,
-                STATE_DIMENSION,
-                range(env.action_space.n),
-                SEED,
-            )
+            agent = DQNAgent(env.action_space.n)
+            if AGENT_PATH:
+                agent.load(AGENT_PATH)
+        
         run_algorithm(agent, agent_dir, env, utils)
 
     finally:
@@ -88,6 +100,15 @@ def run_episode(agent, env):
     env.seed(random.randint(0, 1000000))
     observation = env.reset()
 
+    no_op_steps = NO_OP_STEPS[ALGORITHM]
+    if no_op_steps > 0:
+        for _ in range(random.randint(1, no_op_steps)):
+            last_observation = observation
+            observation, _, _, _ = env.step(0)  # Do nothing
+
+    if ALGORITHM == 'DQN':
+        state = agent.get_initial_state(observation, last_observation)
+
     done = False
     while not done:
 
@@ -95,16 +116,30 @@ def run_episode(agent, env):
             env.render()
             time.sleep(RENDER_SPEED)
 
-        action = agent.choose_action(observation)
+        last_observation = observation
+
+        if ALGORITHM == 'DQN':
+            action = agent.choose_action(state)
+        else:    
+            action = agent.choose_action(observation)
+
         observation, reward, done, _ = env.step(action)
-        agent.receive_reward(reward)
+
+        if ALGORITHM == 'MFEC':
+            agent.receive_reward(reward)
+
+        if ALGORITHM == 'DQN':
+            processed_observation = preprocess(observation, last_observation)
+            state = agent.run(state, action, reward, done, processed_observation)
+
 
         episode_reward += reward
         episode_frames += FRAMESKIP
 
-    agent.train()
+    if ALGORITHM == 'MFEC':
+        agent.train()
     return episode_frames, episode_reward
-
+    
 
 if __name__ == "__main__":
     main()
