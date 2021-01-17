@@ -9,17 +9,26 @@ import gym
 from mfec.agent import MFECAgent
 from utils import Utils
 from dqn.agent import DQNAgent, preprocess
+from both.agent import BOTHAgent
 
-ENVIRONMENT = "MsPacman-v0"  # More games at: https://gym.openai.com/envs/#atari
-AGENT_PATH = None#"agents/MFEC/MsPacman-v0_1609170206/agent.pkl"
+ENVIRONMENT = "Riverraid-v0"  # More games at: https://gym.openai.com/envs/#atari
+AGENT_PATH_MFEC = None#"agents/MFEC/MsPacman-v0_1609170206/agent.pkl"
+AGENT_PATH_DQN = None#"agents/DQN/MsPacman-v0_1609170206/agent.pkl"
 
-# MFEC or DQN
-ALGORITHM = 'DQN'
+# MFEC, DQN or BOTH
+ALGORITHM = 'BOTH'
+
+# for the BOTH mode (INITIAL > FINAL)
+INTRO_EPOCHS = 10.0
+TRANSITION_EPOCHS = 10.0
+INITIAL_MFEC_PROB = 1.0
+FINAL_MFEC_PROB = 0.0
+# remember to adjust the EXPLORATION_STEPS of the dqn agent
 
 RENDER = True
 RENDER_SPEED = 0.04
 
-EPOCHS = 11
+EPOCHS = 50
 FRAMES_PER_EPOCH = 100000
 SEED = 42
 
@@ -36,7 +45,7 @@ SCALE_WIDTH = 84
 STATE_DIMENSION = 64
 
 # Maximum number of "do nothing" actions to be performed by the agent at the start of an episode
-NO_OP_STEPS = {"DQN": 30, "MFEC": 0}
+NO_OP_STEPS = {"DQN": 30, "MFEC": 0, "BOTH": 1}
 
 def main():
     random.seed(SEED)
@@ -55,8 +64,8 @@ def main():
         env.env.frameskip = FRAMESKIP
         env.env.ale.setFloat("repeat_action_probability", REPEAT_ACTION_PROB)
         if ALGORITHM == 'MFEC':
-            if AGENT_PATH:
-                agent = MFECAgent.load(AGENT_PATH)
+            if AGENT_PATH_MFEC:
+                agent = MFECAgent.load(AGENT_PATH_MFEC)
             else:
                 agent = MFECAgent(
                     ACTION_BUFFER_SIZE,
@@ -69,10 +78,18 @@ def main():
                     range(env.action_space.n),
                     SEED,
                 )
-        else:
+        elif ALGORITHM == 'DQN':
             agent = DQNAgent(env.action_space.n)
-            if AGENT_PATH:
-                agent.load(AGENT_PATH)
+            if AGENT_PATH_DQN:
+                agent.load(AGENT_PATH_DQN)
+        else: # BOTH
+            agent = BOTHAgent(
+                INTRO_EPOCHS * FRAMES_PER_EPOCH / FRAMESKIP, TRANSITION_EPOCHS * FRAMES_PER_EPOCH / FRAMESKIP, INITIAL_MFEC_PROB, FINAL_MFEC_PROB,
+                (ACTION_BUFFER_SIZE, K, DISCOUNT, EPSILON, SCALE_HEIGHT, SCALE_WIDTH, STATE_DIMENSION, range(env.action_space.n), SEED,),
+                (env.action_space.n,)
+                )
+            # TODO loading from checkpoint
+            # BTW dqn still doesn't work - the epsilon status is forgotten when loading
         
         run_algorithm(agent, agent_dir, env, utils)
 
@@ -106,7 +123,7 @@ def run_episode(agent, env):
             last_observation = observation
             observation, _, _, _ = env.step(0)  # Do nothing
 
-    if ALGORITHM == 'DQN':
+    if ALGORITHM == 'DQN' or ALGORITHM == 'BOTH':
         state = agent.get_initial_state(observation, last_observation)
 
     done = False
@@ -118,25 +135,26 @@ def run_episode(agent, env):
 
         last_observation = observation
 
-        if ALGORITHM == 'DQN':
-            action = agent.choose_action(state)
-        else:    
+        if ALGORITHM == 'MFEC':
             action = agent.choose_action(observation)
+        elif ALGORITHM == 'DQN':
+            action = agent.choose_action(state)
+        else: # BOTH   
+            action = agent.choose_action(observation, state)
+            
 
         observation, reward, done, _ = env.step(action)
 
         if ALGORITHM == 'MFEC':
             agent.receive_reward(reward)
-
-        if ALGORITHM == 'DQN':
+        else: # DQN or BOTH
             processed_observation = preprocess(observation, last_observation)
             state = agent.run(state, action, reward, done, processed_observation)
-
 
         episode_reward += reward
         episode_frames += FRAMESKIP
 
-    if ALGORITHM == 'MFEC':
+    if ALGORITHM == 'MFEC' or ALGORITHM == 'BOTH':
         agent.train()
     return episode_frames, episode_reward
     
