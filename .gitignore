@@ -1,2 +1,6 @@
 agents/*
 !agents/Qbert-v0_1542210528/
+__pycache__/*
+both/__pycache__/*
+dqn/__pycache__/*
+mfec/__pycache__/*

@@ -22,7 +22,7 @@ NUM_EPISODES = 12000  # Number of episodes the agent plays
 STATE_LENGTH = 4  # Number of most recent frames to produce the input to the network
 GAMMA = 0.99  # Discount factor
 # Number of steps over which the initial value of epsilon is linearly annealed to its final value
-EXPLORATION_STEPS = 1000000
+EXPLORATION_STEPS = 1#000000 (1 for BOTH, 1000000 for DQN)
 INITIAL_EPSILON = 1.0  # Initial value of epsilon in epsilon-greedy
 FINAL_EPSILON = 0.1  # Final value of epsilon in epsilon-greedy
 # Number of steps to populate the replay memory before training starts
