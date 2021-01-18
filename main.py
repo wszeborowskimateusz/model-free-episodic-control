@@ -9,17 +9,21 @@ import gym
 from mfec.agent import MFECAgent
 from utils import Utils
 from dqn.agent import DQNAgent, preprocess
+from vae_train import train_random_vae
+from mfec.agent import RandomAgent
+
 
 ENVIRONMENT = "MsPacman-v0"  # More games at: https://gym.openai.com/envs/#atari
 AGENT_PATH = None#"agents/MFEC/MsPacman-v0_1609170206/agent.pkl"
 
 # MFEC or DQN
-ALGORITHM = 'DQN'
+ALGORITHM = 'MFEC'
 
 RENDER = True
 RENDER_SPEED = 0.04
 
 EPOCHS = 11
+EPOCH_DELAY = 3
 FRAMES_PER_EPOCH = 100000
 SEED = 42
 
@@ -83,17 +87,23 @@ def main():
 
 def run_algorithm(agent, agent_dir, env, utils):
     frames_left = 0
-    for _ in range(EPOCHS):
+    observations = []
+    vae = train_random_vae(ENVIRONMENT)
+    for epoch in range(EPOCHS):
         frames_left += FRAMES_PER_EPOCH
         while frames_left > 0:
-            episode_frames, episode_reward = run_episode(agent, env)
+
+            episode_observations, episode_frames, episode_reward = run_episode(agent, env, vae)
+            observations.extend(episode_observations)
+            #if epoch % EPOCH_DELAY == 0: dotrenowa
+
             frames_left -= episode_frames
             utils.end_episode(episode_frames, episode_reward)
         utils.end_epoch()
         agent.save(agent_dir)
 
 
-def run_episode(agent, env):
+def run_episode(agent, env, vae):
     episode_frames = 0
     episode_reward = 0
 
@@ -120,10 +130,12 @@ def run_episode(agent, env):
 
         if ALGORITHM == 'DQN':
             action = agent.choose_action(state)
-        else:    
-            action = agent.choose_action(observation)
+        else:
+            small_observation = vae.encoder.predict(observation)
+            action = agent.choose_action(small_observation)
 
         observation, reward, done, _ = env.step(action)
+
 
         if ALGORITHM == 'MFEC':
             agent.receive_reward(reward)

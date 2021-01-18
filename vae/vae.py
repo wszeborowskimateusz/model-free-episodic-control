@@ -75,12 +75,10 @@ class VAE(keras.Model):
             reconstruction = self.decoder(z)
             reconstruction_loss = tf.reduce_mean(
                 tf.reduce_sum(
-                    keras.losses.binary_crossentropy(data, reconstruction), 
-axis=(1, 2)
+                    keras.losses.binary_crossentropy(data, reconstruction), axis=(1, 2)
                 )
             )
-            kl_loss = -0.5 * (1 + z_log_var - tf.square(z_mean) - 
-tf.exp(z_log_var))
+            kl_loss = -0.5 * (1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var))
             kl_loss = tf.reduce_mean(tf.reduce_sum(kl_loss, axis=1))
             total_loss = reconstruction_loss + kl_loss
         grads = tape.gradient(total_loss, self.trainable_weights)
@@ -91,7 +89,7 @@ tf.exp(z_log_var))
         return {
             "loss": self.total_loss_tracker.result(),
             "reconstruction_loss": 
-self.reconstruction_loss_tracker.result(),
+            self.reconstruction_loss_tracker.result(),
             "kl_loss": self.kl_loss_tracker.result(),
         }
 
@@ -103,4 +101,5 @@ def train(digits):
     vae = VAE(encoder, decoder)
     vae.compile(optimizer=keras.optimizers.Adam())
     vae.fit(digits, epochs=30, batch_size=128)
+    return vae
 

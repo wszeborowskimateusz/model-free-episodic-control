@@ -9,11 +9,10 @@ from skimage.transform import resize
 import gym
 
 from mfec.agent import RandomAgent
-from mfec.utils import Utils
+from utils import Utils
 from vae.vae import train
 
-ENVIRONMENT = "Qbert-v0"  # More games at: 
-https://gym.openai.com/envs/#atari
+  # More games at: https://gym.openai.com/envs/#atari
 AGENT_PATH = None#"agents/Qbert-v0_1542210528/agent.pkl"
 RENDER = False #True
 RENDER_SPEED = 0.04
@@ -35,22 +34,22 @@ SCALE_WIDTH = 84
 STATE_DIMENSION = 64
 
 
-def main():
+def train_random_vae(environment):
+
     random.seed(SEED)
 
     # Create agent-directory
     execution_time = str(round(time.time()))
-    agent_dir = os.path.join("agents", ENVIRONMENT + "_" + execution_time)
+    agent_dir = os.path.join("agents", environment + "_" + execution_time)
     os.makedirs(agent_dir)
 
     # Initialize utils, environment and agent
     utils = Utils(agent_dir, FRAMES_PER_EPOCH, EPOCHS * FRAMES_PER_EPOCH)
-    env = gym.make(ENVIRONMENT)
+    env = gym.make(environment)
 
     try:
         env.env.frameskip = FRAMESKIP
-        env.env.ale.setFloat("repeat_action_probability", 
-REPEAT_ACTION_PROB)
+        env.env.ale.setFloat("repeat_action_probability", REPEAT_ACTION_PROB)
         vae_agent = RandomAgent(
                 ACTION_BUFFER_SIZE,
                 K,
@@ -62,11 +61,13 @@ REPEAT_ACTION_PROB)
                 range(env.action_space.n),
                 SEED,
             )
-        train_vae(vae_agent, agent_dir, env, utils)
+        vae = train_vae(vae_agent, agent_dir, env, utils)
 
     finally:
         utils.close()
         env.close()
+    return vae
+
 
 def train_vae(agent, agent_dir, env, utils):
     frames_left = 0
@@ -74,17 +75,15 @@ def train_vae(agent, agent_dir, env, utils):
     for epoch in range(EPOCHS):
         frames_left += FRAMES_PER_EPOCH
         while frames_left > 0:
-            observations, episode_frames, episode_reward = 
-run_episode(agent, env)
+            observations, episode_frames, episode_reward = run_episode(agent, env)
             for i in range(len(observations)):
-                observations[i] = resize(observations[i], (64,64, 3), 
-mode='constant')
+                observations[i] = resize(observations[i], (64,64, 3), mode='constant')
             observation_x.extend(observations)
             frames_left -= episode_frames
             utils.end_episode(episode_frames, episode_reward)
         utils.end_epoch()
         agent.save(agent_dir)
-    train(np.array(observation_x))
+    return train(np.array(observation_x))
 
 def run_episode(agent, env):
     observations = []
@@ -113,5 +112,6 @@ def run_episode(agent, env):
 
 
 if __name__ == "__main__":
-    main()
+    ENVIRONMENT = "Qbert-v0"
+    train_random_vae(ENVIRONMENT)
 

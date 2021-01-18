@@ -2,6 +2,7 @@
 
 import os.path
 import pickle
+import random
 
 import numpy as np
 # from scipy.misc.pilutil import imresize
