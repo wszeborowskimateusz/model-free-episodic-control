@@ -10,7 +10,6 @@ import gym
 
 from mfec.agent import MFECAgent
 from utils import Utils
-from dqn.agent import DQNAgent, preprocess
 from vae_train import train_random_vae, train_vae_embedding
 from pca_train import train_random_pca, train_pca_embedding
 from mfec.agent import RandomAgent
@@ -22,7 +21,7 @@ AGENT_PATH = None#"agents/MFEC/MsPacman-v0_1609170206/agent.pkl"
 # MFEC or DQN
 ALGORITHM = 'MFEC'
 # PCA or VAE or RP
-EMBEDDINGS = "PCA"
+EMBEDDINGS = "VAE"
 
 RENDER = False
 RENDER_SPEED = 0.04
@@ -79,10 +78,11 @@ def main():
                     SEED,
                 )
         else:
-            agent = DQNAgent(env.action_space.n)
+            from dqn.agent import DQNAgent
+            # TODO: Fix Keras version differences between DQN and VAE. At this moment different
+            #       Keras versions are imported in each file which results in some errors.
             if AGENT_PATH:
                 agent.load(AGENT_PATH)
-        
         run_algorithm(agent, agent_dir, env, utils)
 
     finally:
@@ -106,7 +106,7 @@ def run_algorithm(agent, agent_dir, env, utils):
             if EMBEDDINGS != 'RP' and epoch % EPOCH_DELAY > EPOCH_DELAY - 3:
                 # add only last 2 epoches
                 observations.extend(episode_observations)
-        
+
             frames_left -= episode_frames
             utils.end_episode(episode_frames, episode_reward)
 
@@ -170,6 +170,7 @@ def run_episode(agent, env, vae, pca):
             agent.receive_reward(reward)
 
         if ALGORITHM == 'DQN':
+            from dqn.agent import preprocess
             processed_observation = preprocess(observation, last_observation)
             state = agent.run(state, action, reward, done, processed_observation)
 
@@ -180,7 +181,7 @@ def run_episode(agent, env, vae, pca):
     if ALGORITHM == 'MFEC':
         agent.train()
     return observations, episode_frames, episode_reward
-    
+
 
 if __name__ == "__main__":
     main()

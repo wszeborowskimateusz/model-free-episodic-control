@@ -116,4 +116,3 @@ def train_vae_embedding(observations):
 if __name__ == "__main__":
     ENVIRONMENT = "Qbert-v0"
     train_random_vae(ENVIRONMENT)
-
