@@ -10,7 +10,8 @@ import gym
 
 from mfec.agent import RandomAgent
 from utils import Utils
-from vae.vae import train
+from sklearn.decomposition import PCA, NMF
+
 
   # More games at: https://gym.openai.com/envs/#atari
 AGENT_PATH = None#"agents/Qbert-v0_1542210528/agent.pkl"
@@ -34,7 +35,7 @@ SCALE_WIDTH = 84
 STATE_DIMENSION = 64
 
 
-def train_random_vae(environment):
+def train_random_pca(environment):
 
     random.seed(SEED)
 
@@ -50,7 +51,7 @@ def train_random_vae(environment):
     try:
         env.env.frameskip = FRAMESKIP
         env.env.ale.setFloat("repeat_action_probability", REPEAT_ACTION_PROB)
-        vae_agent = RandomAgent(
+        pca_agent = RandomAgent(
                 ACTION_BUFFER_SIZE,
                 K,
                 DISCOUNT,
@@ -61,29 +62,28 @@ def train_random_vae(environment):
                 range(env.action_space.n),
                 SEED,
             )
-        vae = train_vae(vae_agent, agent_dir, env, utils)
+        pca = train_pca(pca_agent, agent_dir, env, utils)
 
     finally:
         utils.close()
         env.close()
-    return vae
+    return pca
 
 
-def train_vae(agent, agent_dir, env, utils):
+def train_pca(agent, agent_dir, env, utils):
     frames_left = 0
     observation_x = []
     for epoch in range(EPOCHS):
         frames_left += FRAMES_PER_EPOCH
         while frames_left > 0:
             observations, episode_frames, episode_reward = run_episode(agent, env)
-            for i in range(len(observations)):
-                observations[i] = resize(observations[i], (64,64, 3), mode='constant')
             observation_x.extend(observations)
             frames_left -= episode_frames
             utils.end_episode(episode_frames, episode_reward)
         utils.end_epoch()
         agent.save(agent_dir)
-    return train_vae_embedding(observation_x)
+    
+    return train_pca_embedding(observation_x)
 
 def run_episode(agent, env):
     observations = []
@@ -110,10 +110,17 @@ def run_episode(agent, env):
     agent.train()
     return observations, episode_frames, episode_reward
 
-def train_vae_embedding(observations):
-    return train(np.array(observations))
+def train_pca_embedding(observations):
+    pca = PCA(STATE_DIMENSION)
+    print("pca is learning")
+    for i in range(len(observations)):
+        observations[i] = observations[i].flatten()
+    pca = pca.fit(observations)
+    print("pca learned")
+    return pca
+
 
 if __name__ == "__main__":
     ENVIRONMENT = "Qbert-v0"
-    train_random_vae(ENVIRONMENT)
+    train_random_pca(ENVIRONMENT)
 

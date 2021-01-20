@@ -3,13 +3,16 @@
 import os
 import random
 import time
+import numpy as np
+from PIL import Image
 
 import gym
 
 from mfec.agent import MFECAgent
 from utils import Utils
 from dqn.agent import DQNAgent, preprocess
-from vae_train import train_random_vae
+from vae_train import train_random_vae, train_vae_embedding
+from pca_train import train_random_pca, train_pca_embedding
 from mfec.agent import RandomAgent
 
 
@@ -18,12 +21,14 @@ AGENT_PATH = None#"agents/MFEC/MsPacman-v0_1609170206/agent.pkl"
 
 # MFEC or DQN
 ALGORITHM = 'MFEC'
+# PCA or VAE or RP
+EMBEDDINGS = "PCA"
 
-RENDER = True
+RENDER = False
 RENDER_SPEED = 0.04
 
-EPOCHS = 11
-EPOCH_DELAY = 3
+EPOCHS = 15
+EPOCH_DELAY = 5
 FRAMES_PER_EPOCH = 100000
 SEED = 42
 
@@ -88,27 +93,42 @@ def main():
 def run_algorithm(agent, agent_dir, env, utils):
     frames_left = 0
     observations = []
-    vae = train_random_vae(ENVIRONMENT)
+    pca = None
+    vae = None
+    if EMBEDDINGS == 'VAE':
+        vae = train_random_vae(ENVIRONMENT)
+    elif EMBEDDINGS == 'PCA':
+        pca = train_random_pca(ENVIRONMENT)
     for epoch in range(EPOCHS):
         frames_left += FRAMES_PER_EPOCH
         while frames_left > 0:
-
-            episode_observations, episode_frames, episode_reward = run_episode(agent, env, vae)
-            observations.extend(episode_observations)
-            #if epoch % EPOCH_DELAY == 0: dotrenowa
-
+            episode_observations, episode_frames, episode_reward = run_episode(agent, env, vae, pca)
+            if EMBEDDINGS != 'RP' and epoch % EPOCH_DELAY > EPOCH_DELAY - 3:
+                # add only last 2 epoches
+                observations.extend(episode_observations)
+        
             frames_left -= episode_frames
             utils.end_episode(episode_frames, episode_reward)
+
+        if EMBEDDINGS != 'RP' and epoch % EPOCH_DELAY == EPOCH_DELAY - 1:
+            print("Dotrenowanie "+EMBEDDINGS)
+            if EMBEDDINGS == 'VAE':
+                vae = train_vae_embedding(observations)
+            if EMBEDDINGS == 'PCA':
+                pca = train_pca_embedding(observations)
+            observations = []
+
         utils.end_epoch()
         agent.save(agent_dir)
 
 
-def run_episode(agent, env, vae):
+def run_episode(agent, env, vae, pca):
     episode_frames = 0
     episode_reward = 0
 
     env.seed(random.randint(0, 1000000))
     observation = env.reset()
+    observations = []
 
     no_op_steps = NO_OP_STEPS[ALGORITHM]
     if no_op_steps > 0:
@@ -131,11 +151,20 @@ def run_episode(agent, env, vae):
         if ALGORITHM == 'DQN':
             action = agent.choose_action(state)
         else:
-            small_observation = vae.encoder.predict(observation)
+            if EMBEDDINGS == 'VAE':
+                small_observation = vae.encoder.predict(observation)
+            elif EMBEDDINGS == 'PCA':
+                small_observation = pca.transform([observation.flatten()])[0]
+            else: # random projection
+                projection = np.random.RandomState(SEED).randn(STATE_DIMENSION, SCALE_HEIGHT * SCALE_WIDTH).astype(np.float32)
+                obs_processed = np.mean(observation, axis=2)
+                obs_processed = np.array(Image.fromarray(obs_processed).resize((SCALE_HEIGHT, SCALE_WIDTH)))
+                small_observation = np.dot(projection, obs_processed.flatten())
+
             action = agent.choose_action(small_observation)
 
         observation, reward, done, _ = env.step(action)
-
+        observations.append(observation)
 
         if ALGORITHM == 'MFEC':
             agent.receive_reward(reward)
@@ -150,7 +179,7 @@ def run_episode(agent, env, vae):
 
     if ALGORITHM == 'MFEC':
         agent.train()
-    return episode_frames, episode_reward
+    return observations, episode_frames, episode_reward
     
 
 if __name__ == "__main__":

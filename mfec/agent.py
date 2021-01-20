@@ -42,13 +42,7 @@ class MFECAgent:
     def choose_action(self, observation):
         self.time += 1
 
-        # Preprocess and project observation to state
-        obs_processed = np.mean(observation, axis=2)
-        # obs_processed = imresize(obs_processed, size=self.size)
-        obs_processed = np.array(Image.fromarray(
-            obs_processed).resize(self.size))
-  
-        self.state = np.dot(self.projection, obs_processed.flatten())
+        self.state = observation
 
         # Exploration
         if self.rs.random_sample() < self.epsilon:
