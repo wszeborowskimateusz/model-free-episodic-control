@@ -12,14 +12,11 @@ from mfec.agent import RandomAgent
 from utils import Utils
 from sklearn.decomposition import PCA, NMF
 
-
-  # More games at: https://gym.openai.com/envs/#atari
-AGENT_PATH = None#"agents/Qbert-v0_1542210528/agent.pkl"
-RENDER = False #True
-RENDER_SPEED = 0.04
+import os.path
+import pickle
 
 EPOCHS = 2
-FRAMES_PER_EPOCH = 10000
+FRAMES_PER_EPOCH = 100000
 SEED = 42
 
 ACTION_BUFFER_SIZE = 100000
@@ -35,17 +32,11 @@ SCALE_WIDTH = 84
 STATE_DIMENSION = 64
 
 
-def train_random_pca(environment):
-
+def train_random_pca(environment, agent_path):
     random.seed(SEED)
 
-    # Create agent-directory
-    execution_time = str(round(time.time()))
-    agent_dir = os.path.join("agents", environment + "_" + execution_time)
-    os.makedirs(agent_dir)
-
     # Initialize utils, environment and agent
-    utils = Utils(agent_dir, FRAMES_PER_EPOCH, EPOCHS * FRAMES_PER_EPOCH)
+    utils = Utils(agent_path, FRAMES_PER_EPOCH, EPOCHS * FRAMES_PER_EPOCH)
     env = gym.make(environment)
 
     try:
@@ -62,15 +53,25 @@ def train_random_pca(environment):
                 range(env.action_space.n),
                 SEED,
             )
-        pca = train_pca(pca_agent, agent_dir, env, utils)
+        pca = train_pca(pca_agent, env, utils, agent_path)
 
     finally:
         utils.close()
         env.close()
     return pca
 
+def save(results_dir, data):
+        with open(os.path.join(results_dir, "agent_pca.pkl"), "wb") as file:
+            pickle.dump(data, file, 2)
 
-def train_pca(agent, agent_dir, env, utils):
+
+def load(path):
+    path = path.split('.')[0] + "_pca.pkl"
+    with open(path, "rb") as file:
+        return pickle.load(file)
+
+
+def train_pca(agent, env, utils, path):
     frames_left = 0
     observation_x = []
     for epoch in range(EPOCHS):
@@ -81,9 +82,8 @@ def train_pca(agent, agent_dir, env, utils):
             frames_left -= episode_frames
             utils.end_episode(episode_frames, episode_reward)
         utils.end_epoch()
-        agent.save(agent_dir)
     
-    return train_pca_embedding(observation_x)
+    return train_pca_embedding(observation_x, path)
 
 def run_episode(agent, env):
     observations = []
@@ -94,11 +94,6 @@ def run_episode(agent, env):
     observation = env.reset()
     done = False
     while not done:
-
-        if RENDER:
-            env.render()
-            time.sleep(RENDER_SPEED)
-
         action = agent.choose_action(observation)
         observation, reward, done, _ = env.step(action)
         observations.append(np.array(observation))
@@ -110,17 +105,23 @@ def run_episode(agent, env):
     agent.train()
     return observations, episode_frames, episode_reward
 
-def train_pca_embedding(observations):
+def train_pca_embedding(observations, path):
     pca = PCA(STATE_DIMENSION)
     print("pca is learning")
     for i in range(len(observations)):
         observations[i] = observations[i].flatten()
     pca = pca.fit(observations)
+    save(path, observations)
     print("pca learned")
     return pca
 
+def load_pca(path):
+    observations = load(path)
+    pca = PCA(STATE_DIMENSION)
+    pca = pca.fit(observations)
+    return pca
 
 if __name__ == "__main__":
     ENVIRONMENT = "Qbert-v0"
-    train_random_pca(ENVIRONMENT)
+    train_random_pca(ENVIRONMENT, '.')
 

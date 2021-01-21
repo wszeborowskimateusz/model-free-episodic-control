@@ -11,17 +11,17 @@ import gym
 from mfec.agent import MFECAgent
 from utils import Utils
 from vae_train import train_random_vae, train_vae_embedding
-from pca_train import train_random_pca, train_pca_embedding
+from pca_train import train_random_pca, train_pca_embedding, load_pca
 from mfec.agent import RandomAgent
 
 
-ENVIRONMENT = "MsPacman-v0"  # More games at: https://gym.openai.com/envs/#atari
+ENVIRONMENT = "Breakout-v0"  # More games at: https://gym.openai.com/envs/#atari
 AGENT_PATH = None#"agents/MFEC/MsPacman-v0_1609170206/agent.pkl"
 
 # MFEC or DQN
 ALGORITHM = 'MFEC'
 # PCA or VAE or RP
-EMBEDDINGS = "VAE"
+EMBEDDINGS = "PCA"
 
 RENDER = False
 RENDER_SPEED = 0.04
@@ -65,6 +65,12 @@ def main():
         if ALGORITHM == 'MFEC':
             if AGENT_PATH:
                 agent = MFECAgent.load(AGENT_PATH)
+                emb = load_pca(AGENT_PATH)
+                if EMBEDDINGS == 'VAE':
+                    # TODO load vae from file
+                    emb = train_random_vae(ENVIRONMENT)
+                elif EMBEDDINGS == 'PCA':
+                    emb = load_pca(AGENT_PATH)
             else:
                 agent = MFECAgent(
                     ACTION_BUFFER_SIZE,
@@ -77,32 +83,30 @@ def main():
                     range(env.action_space.n),
                     SEED,
                 )
+                if EMBEDDINGS == 'VAE':
+                    emb = train_random_vae(ENVIRONMENT)
+                elif EMBEDDINGS == 'PCA':
+                    emb = train_random_pca(ENVIRONMENT, agent_dir)
         else:
             from dqn.agent import DQNAgent
             # TODO: Fix Keras version differences between DQN and VAE. At this moment different
             #       Keras versions are imported in each file which results in some errors.
             if AGENT_PATH:
                 agent.load(AGENT_PATH)
-        run_algorithm(agent, agent_dir, env, utils)
+        run_algorithm(agent, agent_dir, env, utils, emb)
 
     finally:
         utils.close()
         env.close()
 
 
-def run_algorithm(agent, agent_dir, env, utils):
+def run_algorithm(agent, agent_dir, env, utils, emb):
     frames_left = 0
     observations = []
-    pca = None
-    vae = None
-    if EMBEDDINGS == 'VAE':
-        vae = train_random_vae(ENVIRONMENT)
-    elif EMBEDDINGS == 'PCA':
-        pca = train_random_pca(ENVIRONMENT)
     for epoch in range(EPOCHS):
         frames_left += FRAMES_PER_EPOCH
         while frames_left > 0:
-            episode_observations, episode_frames, episode_reward = run_episode(agent, env, vae, pca)
+            episode_observations, episode_frames, episode_reward = run_episode(agent, env, emb)
             if EMBEDDINGS != 'RP' and epoch % EPOCH_DELAY > EPOCH_DELAY - 3:
                 # add only last 2 epoches
                 observations.extend(episode_observations)
@@ -113,16 +117,16 @@ def run_algorithm(agent, agent_dir, env, utils):
         if EMBEDDINGS != 'RP' and epoch % EPOCH_DELAY == EPOCH_DELAY - 1:
             print("Dotrenowanie "+EMBEDDINGS)
             if EMBEDDINGS == 'VAE':
-                vae = train_vae_embedding(observations)
+                emb = train_vae_embedding(observations)
             if EMBEDDINGS == 'PCA':
-                pca = train_pca_embedding(observations)
+                emb = train_pca_embedding(observations, agent_dir)
             observations = []
 
         utils.end_epoch()
         agent.save(agent_dir)
 
 
-def run_episode(agent, env, vae, pca):
+def run_episode(agent, env, emb):
     episode_frames = 0
     episode_reward = 0
 
@@ -152,9 +156,9 @@ def run_episode(agent, env, vae, pca):
             action = agent.choose_action(state)
         else:
             if EMBEDDINGS == 'VAE':
-                small_observation = vae.encoder.predict(observation)
+                small_observation = emb.encoder.predict(observation)
             elif EMBEDDINGS == 'PCA':
-                small_observation = pca.transform([observation.flatten()])[0]
+                small_observation = emb.transform([observation.flatten()])[0]
             else: # random projection
                 projection = np.random.RandomState(SEED).randn(STATE_DIMENSION, SCALE_HEIGHT * SCALE_WIDTH).astype(np.float32)
                 obs_processed = np.mean(observation, axis=2)
