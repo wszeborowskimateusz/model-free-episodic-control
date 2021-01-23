@@ -15,8 +15,8 @@ from sklearn.decomposition import PCA, NMF
 import os.path
 import pickle
 
-EPOCHS = 2
-FRAMES_PER_EPOCH = 100000
+EPOCHS = 1
+FRAMES_PER_EPOCH = 10000
 SEED = 42
 
 ACTION_BUFFER_SIZE = 100000

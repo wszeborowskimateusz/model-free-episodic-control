@@ -71,6 +71,7 @@ def main():
                     emb = train_random_vae(ENVIRONMENT)
                 elif EMBEDDINGS == 'PCA':
                     emb = load_pca(AGENT_PATH)
+                    print("load pca from file")
             else:
                 agent = MFECAgent(
                     ACTION_BUFFER_SIZE,
@@ -107,18 +108,20 @@ def run_algorithm(agent, agent_dir, env, utils, emb):
         frames_left += FRAMES_PER_EPOCH
         while frames_left > 0:
             episode_observations, episode_frames, episode_reward = run_episode(agent, env, emb)
-            if EMBEDDINGS != 'RP' and epoch % EPOCH_DELAY > EPOCH_DELAY - 3:
-                # add only last 2 epoches
-                observations.extend(episode_observations)
+            if EMBEDDINGS != 'RP' and epoch % EPOCH_DELAY > EPOCH_DELAY - 4:
+               # add only last 1 epoch
+                observations.extend(episode_observations[0::10])
 
             frames_left -= episode_frames
             utils.end_episode(episode_frames, episode_reward)
 
         if EMBEDDINGS != 'RP' and epoch % EPOCH_DELAY == EPOCH_DELAY - 1:
-            print("Dotrenowanie "+EMBEDDINGS)
+            print("Dotrenowanie " + EMBEDDINGS)
             if EMBEDDINGS == 'VAE':
                 emb = train_vae_embedding(observations)
             if EMBEDDINGS == 'PCA':
+                if len(observations) > 2000:
+                    observations = random.sample(observations, 2000)
                 emb = train_pca_embedding(observations, agent_dir)
             observations = []
 
