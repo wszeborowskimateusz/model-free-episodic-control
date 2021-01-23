@@ -3,23 +3,31 @@
 import os
 import random
 import time
+import numpy as np
+from PIL import Image
 
 import gym
 
 from mfec.agent import MFECAgent
 from utils import Utils
-from dqn.agent import DQNAgent, preprocess
+from vae_train import train_random_vae, train_vae_embedding
+from pca_train import train_random_pca, train_pca_embedding, load_pca
+from mfec.agent import RandomAgent
 
-ENVIRONMENT = "MsPacman-v0"  # More games at: https://gym.openai.com/envs/#atari
+
+ENVIRONMENT = "Breakout-v0"  # More games at: https://gym.openai.com/envs/#atari
 AGENT_PATH = None#"agents/MFEC/MsPacman-v0_1609170206/agent.pkl"
 
 # MFEC or DQN
-ALGORITHM = 'DQN'
+ALGORITHM = 'MFEC'
+# PCA or VAE or RP
+EMBEDDINGS = "PCA"
 
-RENDER = True
+RENDER = False
 RENDER_SPEED = 0.04
 
-EPOCHS = 11
+EPOCHS = 15
+EPOCH_DELAY = 5
 FRAMES_PER_EPOCH = 100000
 SEED = 42
 
@@ -57,6 +65,13 @@ def main():
         if ALGORITHM == 'MFEC':
             if AGENT_PATH:
                 agent = MFECAgent.load(AGENT_PATH)
+                emb = load_pca(AGENT_PATH)
+                if EMBEDDINGS == 'VAE':
+                    # TODO load vae from file
+                    emb = train_random_vae(ENVIRONMENT)
+                elif EMBEDDINGS == 'PCA':
+                    emb = load_pca(AGENT_PATH)
+                    print("load pca from file")
             else:
                 agent = MFECAgent(
                     ACTION_BUFFER_SIZE,
@@ -69,36 +84,58 @@ def main():
                     range(env.action_space.n),
                     SEED,
                 )
+                if EMBEDDINGS == 'VAE':
+                    emb = train_random_vae(ENVIRONMENT)
+                elif EMBEDDINGS == 'PCA':
+                    emb = train_random_pca(ENVIRONMENT, agent_dir)
         else:
-            agent = DQNAgent(env.action_space.n)
+            from dqn.agent import DQNAgent
+            # TODO: Fix Keras version differences between DQN and VAE. At this moment different
+            #       Keras versions are imported in each file which results in some errors.
             if AGENT_PATH:
                 agent.load(AGENT_PATH)
-        
-        run_algorithm(agent, agent_dir, env, utils)
+        run_algorithm(agent, agent_dir, env, utils, emb)
 
     finally:
         utils.close()
         env.close()
 
 
-def run_algorithm(agent, agent_dir, env, utils):
+def run_algorithm(agent, agent_dir, env, utils, emb):
     frames_left = 0
-    for _ in range(EPOCHS):
+    observations = []
+    for epoch in range(EPOCHS):
         frames_left += FRAMES_PER_EPOCH
         while frames_left > 0:
-            episode_frames, episode_reward = run_episode(agent, env)
+            episode_observations, episode_frames, episode_reward = run_episode(agent, env, emb)
+            if EMBEDDINGS != 'RP' and epoch % EPOCH_DELAY > EPOCH_DELAY - 4:
+               # add only last 1 epoch
+                observations.extend(episode_observations[0::10])
+
             frames_left -= episode_frames
             utils.end_episode(episode_frames, episode_reward)
+
+        if EMBEDDINGS != 'RP' and epoch % EPOCH_DELAY == EPOCH_DELAY - 1:
+            print("Dotrenowanie " + EMBEDDINGS)
+            if EMBEDDINGS == 'VAE':
+                emb = train_vae_embedding(observations)
+            if EMBEDDINGS == 'PCA':
+                if len(observations) > 2000:
+                    observations = random.sample(observations, 2000)
+                emb = train_pca_embedding(observations, agent_dir)
+            observations = []
+
         utils.end_epoch()
         agent.save(agent_dir)
 
 
-def run_episode(agent, env):
+def run_episode(agent, env, emb):
     episode_frames = 0
     episode_reward = 0
 
     env.seed(random.randint(0, 1000000))
     observation = env.reset()
+    observations = []
 
     no_op_steps = NO_OP_STEPS[ALGORITHM]
     if no_op_steps > 0:
@@ -120,15 +157,27 @@ def run_episode(agent, env):
 
         if ALGORITHM == 'DQN':
             action = agent.choose_action(state)
-        else:    
-            action = agent.choose_action(observation)
+        else:
+            if EMBEDDINGS == 'VAE':
+                small_observation = emb.encoder.predict(observation)
+            elif EMBEDDINGS == 'PCA':
+                small_observation = emb.transform([observation.flatten()])[0]
+            else: # random projection
+                projection = np.random.RandomState(SEED).randn(STATE_DIMENSION, SCALE_HEIGHT * SCALE_WIDTH).astype(np.float32)
+                obs_processed = np.mean(observation, axis=2)
+                obs_processed = np.array(Image.fromarray(obs_processed).resize((SCALE_HEIGHT, SCALE_WIDTH)))
+                small_observation = np.dot(projection, obs_processed.flatten())
+
+            action = agent.choose_action(small_observation)
 
         observation, reward, done, _ = env.step(action)
+        observations.append(observation)
 
         if ALGORITHM == 'MFEC':
             agent.receive_reward(reward)
 
         if ALGORITHM == 'DQN':
+            from dqn.agent import preprocess
             processed_observation = preprocess(observation, last_observation)
             state = agent.run(state, action, reward, done, processed_observation)
 
@@ -138,8 +187,8 @@ def run_episode(agent, env):
 
     if ALGORITHM == 'MFEC':
         agent.train()
-    return episode_frames, episode_reward
-    
+    return observations, episode_frames, episode_reward
+
 
 if __name__ == "__main__":
     main()
